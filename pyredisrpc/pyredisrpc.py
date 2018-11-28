@@ -94,7 +94,7 @@ class Server(object):
         try:
             val = func(*params_args, **params_kw)
         except Exception as e:
-            logger.error('CallError: %s', e)
+            logger.exception('CallError: %s', e)
             self.send_response(req_id, None, CallError(repr(e)))
             return
         logger.info('Success: method=%s, params=%s, result=%s', method, params, val)
