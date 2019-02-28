@@ -25,7 +25,7 @@ class CallError(Error):
 class Server(object):
     '''redis rpc server'''
 
-    def __init__(self, queue, redis_url='', prefix='pyredisrpc:'):
+    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:'):
         '''
         redis_url: url to redis server
         queue: a name to generate server listening queue based on it
@@ -122,15 +122,17 @@ class Server(object):
 class Client(object):
     '''redis rpc client'''
 
-    def __init__(self, queue, redis_url='', prefix='pyredisrpc:'):
+    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:', call_timeout=0):
         '''
         redis_url: url to redis server
         queue: a name to generate server listening queue based on it
         prefix: use as a prefix to generate needed redis keys
+        call_timeout: time in seconds to wait for call method on server. zero mean wait forever
         '''
         self.redis = redis.from_url(redis_url)
         self.prefix = prefix
         self.queue = prefix + queue
+        self.call_timeout = call_timeout
 
     def call(self, method, params):
         '''
@@ -141,7 +143,10 @@ class Client(object):
         req = {'id': req_id, 'method': method, 'params': params}
         self.redis.rpush(self.queue, json.dumps(req))
         key = self.prefix + req_id
-        _, response_data = self.redis.blpop(key)
+        res = self.redis.blpop(key, timeout=self.call_timeout)
+        if not res:
+            raise Error('call timeout error')
+        _, response_data = res
         response = json.loads(response_data.decode())
         if response['error'] is not None:
             self.raise_error(response['error'])
