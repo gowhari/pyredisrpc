@@ -25,7 +25,7 @@ class CallError(Error):
 class Server(object):
     '''redis rpc server'''
 
-    def __init__(self, queue, redis_url='', prefix='pyredisrpc:'):
+    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:'):
         '''
         redis_url: url to redis server
         queue: a name to generate server listening queue based on it
