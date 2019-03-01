@@ -22,18 +22,25 @@ class CallError(Error):
     pass
 
 
+class TimeoutError(Error):
+    '''if server doesn't response in call timeout time client raises this error'''
+    pass
+
+
 class Server(object):
     '''redis rpc server'''
 
-    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:'):
+    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:', response_expire_time=60):
         '''
         redis_url: url to redis server
         queue: a name to generate server listening queue based on it
         prefix: use as a prefix to generate needed redis keys
+        response_expire_time: response will expire if client doesn't fetch it in this time (seconds)
         '''
         self.redis = redis.from_url(redis_url)
         self.prefix = prefix
         self.queue = prefix + queue
+        self.response_expire_time = response_expire_time
         self.methods = {}
 
     def run(self):
@@ -111,6 +118,7 @@ class Server(object):
         result = {'id': req_id, 'result': result, 'error': error}
         key = self.prefix + req_id
         self.redis.rpush(key, json.dumps(result))
+        self.redis.expire(key, self.response_expire_time)
 
     def method(self, f):
         '''
@@ -122,7 +130,7 @@ class Server(object):
 class Client(object):
     '''redis rpc client'''
 
-    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:'):
+    def __init__(self, queue, redis_url='redis://', prefix='pyredisrpc:', timeout=0):
         '''
         redis_url: url to redis server
         queue: a name to generate server listening queue based on it
@@ -131,6 +139,7 @@ class Client(object):
         self.redis = redis.from_url(redis_url)
         self.prefix = prefix
         self.queue = prefix + queue
+        self.timeout = timeout
 
     def call(self, method, params):
         '''
@@ -141,7 +150,10 @@ class Client(object):
         req = {'id': req_id, 'method': method, 'params': params}
         self.redis.rpush(self.queue, json.dumps(req))
         key = self.prefix + req_id
-        _, response_data = self.redis.blpop(key)
+        res = self.redis.blpop(key, self.timeout)
+        if not res:
+            raise TimeoutError(req, key)
+        _, response_data = res
         response = json.loads(response_data.decode())
         if response['error'] is not None:
             self.raise_error(response['error'])
