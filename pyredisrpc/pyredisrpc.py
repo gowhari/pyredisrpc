@@ -140,11 +140,12 @@ class Client(object):
         params: a list with exactly two items: [[args], {keywords}]
         '''
         req_id = uuid.uuid4().hex
-        req = {'id': req_id, 'method': method, 'params': params}
-        self.redis.rpush(self.queue, json.dumps(req))
+        req = json.dumps({'id': req_id, 'method': method, 'params': params})
+        self.redis.rpush(self.queue, req)
         key = self.prefix + req_id
         res = self.redis.blpop(key, timeout=self.call_timeout)
         if not res:
+            self.redis.lrem(self.queue, -1, req)  # remove request from queue
             raise Error('call timeout error')
         _, response_data = res
         response = json.loads(response_data.decode())
