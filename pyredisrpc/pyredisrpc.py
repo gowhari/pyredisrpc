@@ -53,7 +53,9 @@ class Server(object):
             req_args = self.parse_request(req_data)
             if req_args is None:
                 continue
-            req_id, method, params = req_args
+            req_id, method, params, timeout_check = req_args
+            if timeout_check and self.is_timeout_expired(req_id):
+                continue
             self.call_method(req_id, method, params)
 
     def parse_request(self, req_data):
@@ -88,7 +90,12 @@ class Server(object):
             logger.error('BadRequest: invalid params: %s', params)
             self.send_response(req_id, None, BadRequest('invalid params', params))
             return
-        return req_id, method, params
+        timeout_check = req.get('tmchk') == 1
+        return req_id, method, params, timeout_check
+
+    def is_timeout_expired(self, req_id):
+        timeout_key = self.prefix + req_id + ':tmchk'
+        return self.redis.get(timeout_key) is None
 
     def call_method(self, req_id, method, params):
         '''
@@ -135,6 +142,7 @@ class Client(object):
         redis_url: url to redis server
         queue: a name to generate server listening queue based on it
         prefix: use as a prefix to generate needed redis keys
+        timeout: request timeout in seconds
         '''
         self.redis = redis.from_url(redis_url)
         self.prefix = prefix
@@ -148,6 +156,10 @@ class Client(object):
         '''
         req_id = uuid.uuid4().hex
         req = {'id': req_id, 'method': method, 'params': params}
+        if self.timeout != 0:
+            req['tmchk'] = 1
+            timeout_key = self.prefix + req_id + ':tmchk'
+            self.redis.set(timeout_key, 1, self.timeout)
         self.redis.rpush(self.queue, json.dumps(req))
         key = self.prefix + req_id
         res = self.redis.blpop(key, self.timeout)
